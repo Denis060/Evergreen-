@@ -52,7 +52,16 @@ export default function App() {
     flyer_base64: "",
     link1: "", // viewing / stream
     link2: "", // repass / tickets
-    link3: ""  // burial / location
+    link3: "", // burial / location
+    viewing_date: "",
+    viewing_time: "",
+    viewing_location: "",
+    repass_date: "",
+    repass_time: "",
+    repass_location: "",
+    burial_date: "",
+    burial_time: "",
+    burial_location: "",
   });
 
   useEffect(() => {
@@ -125,7 +134,23 @@ export default function App() {
       type: formData.type,
       flyer_url: formData.flyer_base64,
       links,
-      other_details: {}
+      other_details: {
+        viewing: {
+          date: formData.viewing_date,
+          time: formData.viewing_time,
+          location: formData.viewing_location,
+        },
+        repass: {
+          date: formData.repass_date,
+          time: formData.repass_time,
+          location: formData.repass_location,
+        },
+        burial: {
+          date: formData.burial_date,
+          time: formData.burial_time,
+          location: formData.burial_location,
+        }
+      }
     };
 
     try {
@@ -135,7 +160,23 @@ export default function App() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        setFormData({ name: "", type: "memorial", flyer_base64: "", link1: "", link2: "", link3: "" });
+        setFormData({ 
+          name: "", 
+          type: "memorial", 
+          flyer_base64: "", 
+          link1: "", 
+          link2: "", 
+          link3: "",
+          viewing_date: "",
+          viewing_time: "",
+          viewing_location: "",
+          repass_date: "",
+          repass_time: "",
+          repass_location: "",
+          burial_date: "",
+          burial_time: "",
+          burial_location: "",
+        });
         fetchPrograms();
       }
     } catch (err) {
@@ -192,16 +233,46 @@ export default function App() {
     }
 
     const links: ProgramLinks = JSON.parse(currentProgram.links || '{}');
+    const otherDetails = JSON.parse(currentProgram.other_details || '{}');
+
+    const handleShare = async () => {
+      const shareData = {
+        title: currentProgram.name,
+        text: currentProgram.type === 'memorial' ? `In loving memory of ${currentProgram.name}` : `Check out ${currentProgram.name}`,
+        url: window.location.href,
+      };
+
+      if (navigator.share) {
+        try {
+          await navigator.share(shareData);
+        } catch (err) {
+          console.error("Error sharing:", err);
+        }
+      } else {
+        navigator.clipboard.writeText(window.location.href);
+        setCopiedId('public-share');
+        setTimeout(() => setCopiedId(null), 2000);
+      }
+    };
 
     return (
       <div className="min-h-screen bg-[#f5f5f0] font-serif text-[#1a1a1a]">
         {/* Header */}
-        <header className="max-w-4xl mx-auto pt-12 pb-8 px-6 text-center">
+        <header className="max-w-4xl mx-auto pt-12 pb-8 px-6 text-center relative">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="mb-4"
           >
+            <div className="flex justify-center mb-4">
+              <button 
+                onClick={handleShare}
+                className="flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-gray-100 text-[#5A5A40] text-sm font-sans hover:shadow-md transition-all"
+              >
+                {copiedId === 'public-share' ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+                {copiedId === 'public-share' ? "Link Copied" : "Share Program"}
+              </button>
+            </div>
             <span className="text-sm uppercase tracking-widest text-[#5A5A40] opacity-70">
               {currentProgram.type === 'memorial' ? 'In Loving Memory of' : 'Welcome to'}
             </span>
@@ -245,28 +316,61 @@ export default function App() {
                 
                 <div className="space-y-4">
                   {Object.entries(links).map(([key, value]) => {
-                    if (!value) return null;
+                    if (!value && !otherDetails[key]) return null;
+                    const details = otherDetails[key] || {};
+                    
                     return (
-                      <a 
+                      <div 
                         key={key}
-                        href={value} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-between p-6 bg-white rounded-2xl shadow-sm hover:shadow-md transition-all group border border-transparent hover:border-[#5A5A40]/20"
+                        className="p-6 bg-white rounded-2xl shadow-sm border border-transparent hover:border-[#5A5A40]/20 transition-all"
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-[#f5f5f0] flex items-center justify-center text-[#5A5A40]">
-                            {key === 'viewing' || key === 'stream' ? <Video className="w-6 h-6" /> : 
-                             key === 'repass' || key === 'location' ? <MapPin className="w-6 h-6" /> : 
-                             <Calendar className="w-6 h-6" />}
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-[#f5f5f0] flex items-center justify-center text-[#5A5A40]">
+                              {key === 'viewing' || key === 'stream' ? <Video className="w-6 h-6" /> : 
+                               key === 'repass' || key === 'location' ? <MapPin className="w-6 h-6" /> : 
+                               <Calendar className="w-6 h-6" />}
+                            </div>
+                            <div>
+                              <p className="font-medium capitalize">{key} Service</p>
+                              <p className="text-xs text-gray-400 font-sans uppercase tracking-widest">Details & Links</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium capitalize">{key} Details</p>
-                            <p className="text-sm text-gray-500 font-sans">Click to view more</p>
-                          </div>
+                          {value && (
+                            <a 
+                              href={value} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-[#5A5A40] hover:scale-110 transition-transform"
+                            >
+                              <ExternalLink className="w-5 h-5" />
+                            </a>
+                          )}
                         </div>
-                        <ExternalLink className="w-5 h-5 text-[#5A5A40] opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </a>
+
+                        {(details.date || details.time || details.location) && (
+                          <div className="space-y-2 text-sm text-gray-600 font-sans pl-16">
+                            {details.date && (
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-3 h-3 opacity-50" />
+                                <span>{details.date}</span>
+                              </div>
+                            )}
+                            {details.time && (
+                              <div className="flex items-center gap-2">
+                                <Video className="w-3 h-3 opacity-50" />
+                                <span>{details.time}</span>
+                              </div>
+                            )}
+                            {details.location && (
+                              <div className="flex items-center gap-2">
+                                <MapPin className="w-3 h-3 opacity-50" />
+                                <span>{details.location}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
 
@@ -453,39 +557,120 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="space-y-4 pt-2 border-t border-gray-100">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Program Links</p>
+              <div className="space-y-6 pt-2 border-t border-gray-100">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Program Details</p>
                 
-                <div className="relative">
-                  <Video className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                {/* Viewing Section */}
+                <div className="space-y-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <p className="text-xs font-bold text-[#5A5A40] uppercase tracking-wider">Viewing / Stream</p>
+                  <div className="relative">
+                    <Video className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input 
+                      type="url" 
+                      placeholder="Link"
+                      className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.link1}
+                      onChange={(e) => setFormData({ ...formData, link1: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Date"
+                      className="px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.viewing_date}
+                      onChange={(e) => setFormData({ ...formData, viewing_date: e.target.value })}
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Time"
+                      className="px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.viewing_time}
+                      onChange={(e) => setFormData({ ...formData, viewing_time: e.target.value })}
+                    />
+                  </div>
                   <input 
-                    type="url" 
-                    placeholder={formData.type === 'memorial' ? "Viewing Link" : "Live Stream Link"}
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
-                    value={formData.link1}
-                    onChange={(e) => setFormData({ ...formData, link1: e.target.value })}
+                    type="text" 
+                    placeholder="Location"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                    value={formData.viewing_location}
+                    onChange={(e) => setFormData({ ...formData, viewing_location: e.target.value })}
                   />
                 </div>
 
-                <div className="relative">
-                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                {/* Repass Section */}
+                <div className="space-y-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <p className="text-xs font-bold text-[#5A5A40] uppercase tracking-wider">Repass / Tickets</p>
+                  <div className="relative">
+                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input 
+                      type="url" 
+                      placeholder="Link"
+                      className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.link2}
+                      onChange={(e) => setFormData({ ...formData, link2: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Date"
+                      className="px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.repass_date}
+                      onChange={(e) => setFormData({ ...formData, repass_date: e.target.value })}
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Time"
+                      className="px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.repass_time}
+                      onChange={(e) => setFormData({ ...formData, repass_time: e.target.value })}
+                    />
+                  </div>
                   <input 
-                    type="url" 
-                    placeholder={formData.type === 'memorial' ? "Repass Link" : "Tickets Link"}
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
-                    value={formData.link2}
-                    onChange={(e) => setFormData({ ...formData, link2: e.target.value })}
+                    type="text" 
+                    placeholder="Location"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                    value={formData.repass_location}
+                    onChange={(e) => setFormData({ ...formData, repass_location: e.target.value })}
                   />
                 </div>
 
-                <div className="relative">
-                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                {/* Burial Section */}
+                <div className="space-y-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <p className="text-xs font-bold text-[#5A5A40] uppercase tracking-wider">Burial / Location</p>
+                  <div className="relative">
+                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input 
+                      type="url" 
+                      placeholder="Link"
+                      className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.link3}
+                      onChange={(e) => setFormData({ ...formData, link3: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Date"
+                      className="px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.burial_date}
+                      onChange={(e) => setFormData({ ...formData, burial_date: e.target.value })}
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Time"
+                      className="px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                      value={formData.burial_time}
+                      onChange={(e) => setFormData({ ...formData, burial_time: e.target.value })}
+                    />
+                  </div>
                   <input 
-                    type="url" 
-                    placeholder={formData.type === 'memorial' ? "Burial Link" : "Location Link"}
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
-                    value={formData.link3}
-                    onChange={(e) => setFormData({ ...formData, link3: e.target.value })}
+                    type="text" 
+                    placeholder="Location"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none transition-all text-sm"
+                    value={formData.burial_location}
+                    onChange={(e) => setFormData({ ...formData, burial_location: e.target.value })}
                   />
                 </div>
               </div>
