@@ -50,6 +50,7 @@ async function startServer() {
     try {
       const { data: event, error } = await supabase.from("events").select("*").eq("id", req.params.id).single();
       if (error || !event) return res.status(404).json({ error: "Event not found" });
+      if (event.published === false) return res.status(404).json({ error: "Event not found" });
       const [{ data: subPrograms }, { data: downloadables }] = await Promise.all([
         supabase.from("sub_programs").select("*").eq("event_id", req.params.id).order("order_index"),
         supabase.from("downloadables").select("*").eq("event_id", req.params.id),
@@ -78,23 +79,69 @@ async function startServer() {
   });
 
   app.post("/api/events", requireAuth, async (req, res) => {
-    const { deceased_name, event_type, deceased_photo } = req.body;
+    const { deceased_name, event_type, deceased_photo, obituary } = req.body;
     if (!deceased_name) return res.status(400).json({ error: "deceased_name is required" });
     const id = Math.random().toString(36).substring(2, 10);
     try {
-      const { data, error } = await getServiceClient().from("events").insert([{ id, deceased_name, event_type: event_type || "memorial", deceased_photo: deceased_photo || null }]).select().single();
+      const { data, error } = await getServiceClient().from("events").insert([{ id, deceased_name, event_type: event_type || "memorial", deceased_photo: deceased_photo || null, obituary: obituary || null }]).select().single();
       if (error) throw error;
       res.status(201).json(data);
     } catch (err) { console.error(err); res.status(500).json({ error: "Failed to create event" }); }
   });
 
   app.put("/api/events/:id", requireAuth, async (req, res) => {
-    const { deceased_name, event_type, deceased_photo } = req.body;
+    const { deceased_name, event_type, deceased_photo, obituary } = req.body;
     try {
-      const { data, error } = await getServiceClient().from("events").update({ deceased_name, event_type, deceased_photo }).eq("id", req.params.id).select().single();
+      const { data, error } = await getServiceClient().from("events").update({ deceased_name, event_type, deceased_photo, obituary }).eq("id", req.params.id).select().single();
       if (error) throw error;
       res.json(data);
     } catch (err) { console.error(err); res.status(500).json({ error: "Failed to update event" }); }
+  });
+
+  app.post("/api/events/:id/duplicate", requireAuth, async (req, res) => {
+    try {
+      const sc = getServiceClient();
+      const { data: source, error: fetchErr } = await sc.from("events").select("*").eq("id", req.params.id).single();
+      if (fetchErr || !source) return res.status(404).json({ error: "Event not found" });
+      const newId = Math.random().toString(36).substring(2, 10);
+      const { data: newEvent, error: insertErr } = await sc.from("events").insert([{
+        id: newId,
+        deceased_name: `${source.deceased_name} (Copy)`,
+        event_type: source.event_type,
+        deceased_photo: source.deceased_photo,
+        obituary: source.obituary,
+        published: source.published ?? true,
+      }]).select().single();
+      if (insertErr) throw insertErr;
+      const { data: subPrograms } = await sc.from("sub_programs").select("*").eq("event_id", req.params.id);
+      if (subPrograms?.length) {
+        await sc.from("sub_programs").insert(subPrograms.map(({ id: _id, event_id: _ev, ...rest }: any) => ({ ...rest, event_id: newId })));
+      }
+      const { data: downloads } = await sc.from("downloadables").select("*").eq("event_id", req.params.id);
+      if (downloads?.length) {
+        await sc.from("downloadables").insert(downloads.map(({ id: _id, event_id: _ev, ...rest }: any) => ({ ...rest, event_id: newId })));
+      }
+      res.status(201).json(newEvent);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed to duplicate event" }); }
+  });
+
+  app.patch("/api/events/:id/publish", requireAuth, async (req, res) => {
+    const { published } = req.body;
+    if (typeof published !== "boolean") return res.status(400).json({ error: "published must be boolean" });
+    try {
+      const { data, error } = await getServiceClient().from("events").update({ published }).eq("id", req.params.id).select().single();
+      if (error) throw error;
+      res.json(data);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed to update publish status" }); }
+  });
+
+  app.post("/api/events/:id/view", async (req, res) => {
+    try {
+      const sc = getServiceClient();
+      const { data } = await sc.from("events").select("view_count").eq("id", req.params.id).single();
+      if (data) await sc.from("events").update({ view_count: (data.view_count || 0) + 1 }).eq("id", req.params.id);
+      res.json({ success: true });
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed to record view" }); }
   });
 
   app.delete("/api/events/:id", requireAuth, async (req, res) => {
