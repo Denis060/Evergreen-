@@ -7,14 +7,14 @@ const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 // Anon client — public read routes
-const supabase = createClient(supabaseUrl, supabaseAnonKey || "placeholder");
+const supabase = createClient<any>(supabaseUrl, supabaseAnonKey || "placeholder");
 
 // Service role client — bypasses RLS for all authenticated writes
-let _serviceClient: ReturnType<typeof createClient> | null = null;
+let _serviceClient: ReturnType<typeof createClient<any>> | null = null;
 function getServiceClient() {
   if (!_serviceClient) {
     if (!supabaseServiceKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
-    _serviceClient = createClient(supabaseUrl, supabaseServiceKey);
+    _serviceClient = createClient<any>(supabaseUrl, supabaseServiceKey);
   }
   return _serviceClient;
 }
