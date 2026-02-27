@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Camera, Plus, Trash2, ExternalLink, Copy, Check,
-  Image as ImageIcon, Settings, LogOut, QrCode
+  Image as ImageIcon, Settings, LogOut, QrCode,
+  Search, ArrowUpDown, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -17,6 +18,41 @@ export default function AdminDashboard() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [qrCodes, setQrCodes] = useState<Record<string, string>>({});
   const [showQr, setShowQr] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  const EVENT_TYPES = [
+    { value: 'all', label: 'All Types' },
+    { value: 'memorial', label: 'Memorial' },
+    { value: 'funeral', label: 'Funeral' },
+    { value: 'celebration', label: 'Celebration of Life' },
+    { value: 'wedding', label: 'Wedding' },
+    { value: 'birthday', label: 'Birthday' },
+    { value: 'graduation', label: 'Graduation' },
+    { value: 'concert', label: 'Concert' },
+    { value: 'conference', label: 'Conference' },
+    { value: 'church', label: 'Church Service' },
+    { value: 'thanksgiving', label: 'Thanksgiving' },
+    { value: 'anniversary', label: 'Anniversary' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const filteredEvents = useMemo(() => {
+    let result = [...events];
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(e => e.deceased_name.toLowerCase().includes(q));
+    }
+    if (typeFilter !== 'all') {
+      result = result.filter(e => e.event_type === typeFilter);
+    }
+    result.sort((a, b) => {
+      const diff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      return sortOrder === 'newest' ? diff : -diff;
+    });
+    return result;
+  }, [events, search, typeFilter, sortOrder]);
 
   useEffect(() => { fetchEvents(); }, []);
 
@@ -102,13 +138,58 @@ export default function AdminDashboard() {
       </nav>
 
       <main className="max-w-6xl mx-auto p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-            All Events
-            <span className="text-sm font-normal text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-              {events.length}
-            </span>
-          </h2>
+
+        {/* Stats + Search + Filters */}
+        <div className="mb-6 space-y-3">
+          {/* Stats row */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              All Events
+              <span className="text-sm font-normal text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                {events.length} total
+              </span>
+              {filteredEvents.length !== events.length && (
+                <span className="text-sm font-normal text-[#5A5A40] bg-[#5A5A40]/10 px-2 py-0.5 rounded-full">
+                  {filteredEvents.length} shown
+                </span>
+              )}
+            </h2>
+            <button
+              onClick={() => setSortOrder(s => s === 'newest' ? 'oldest' : 'newest')}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#5A5A40] bg-white border border-gray-200 hover:border-[#5A5A40]/30 px-3 py-2 rounded-lg transition-all"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
+            </button>
+          </div>
+
+          {/* Search + Type filter */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
+              <input
+                type="text"
+                placeholder="Search by name…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-9 pr-9 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#5A5A40]/50 focus:ring-2 focus:ring-[#5A5A40]/10 transition-all"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value)}
+              className="bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-600 focus:outline-none focus:border-[#5A5A40]/50 focus:ring-2 focus:ring-[#5A5A40]/10 transition-all cursor-pointer"
+            >
+              {EVENT_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {loading ? (
@@ -117,6 +198,22 @@ export default function AdminDashboard() {
               <div key={i} className="bg-white rounded-2xl p-5 animate-pulse h-56 border border-gray-100" />
             ))}
           </div>
+        ) : filteredEvents.length === 0 && events.length > 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="py-20 text-center bg-white rounded-3xl border-2 border-dashed border-gray-200"
+          >
+            <Search className="w-8 h-8 text-gray-200 mx-auto mb-3" />
+            <h3 className="text-base font-medium text-gray-900">No events match</h3>
+            <p className="text-gray-400 text-sm mt-1 mb-4">Try adjusting your search or filter.</p>
+            <button
+              onClick={() => { setSearch(''); setTypeFilter('all'); }}
+              className="text-sm text-[#5A5A40] font-medium hover:underline"
+            >
+              Clear filters
+            </button>
+          </motion.div>
         ) : events.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -139,7 +236,7 @@ export default function AdminDashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <AnimatePresence mode="popLayout">
-              {events.map((ev) => (
+              {filteredEvents.map((ev) => (
                 <motion.div
                   key={ev.id}
                   layout
