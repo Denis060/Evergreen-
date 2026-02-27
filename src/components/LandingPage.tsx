@@ -112,9 +112,6 @@ export default function LandingPage() {
                 {settings.phone}
               </a>
             )}
-            <Link to="/login" className="text-xs text-white/25 hover:text-white/50 transition-colors">
-              Admin
-            </Link>
           </nav>
         </div>
       </header>
@@ -483,7 +480,6 @@ export default function LandingPage() {
             <span className="text-white/30 text-xs font-medium">{businessName}</span>
           </div>
           <p className="text-white/15 text-xs">© {new Date().getFullYear()} All rights reserved.</p>
-          <Link to="/login" className="text-white/15 text-xs hover:text-white/40 transition-colors">Admin Login</Link>
         </div>
       </footer>
 
