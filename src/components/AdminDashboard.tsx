@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Camera, Plus, Trash2, ExternalLink, Copy, Check,
   Image as ImageIcon, Settings, LogOut, QrCode,
-  Search, ArrowUpDown, X
+  Search, ArrowUpDown, X, CopyPlus, Eye, EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -83,6 +83,38 @@ export default function AdminDashboard() {
       setEvents(prev => prev.filter(e => e.id !== id));
     } catch (err) {
       console.error('Failed to delete event:', err);
+    }
+  };
+
+  const togglePublish = async (id: string, currentPublished: boolean) => {
+    try {
+      const headers = await authHeader();
+      const res = await fetch(`/api/events/${id}/publish`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ published: !currentPublished }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const updated = await res.json();
+      setEvents(prev => prev.map(e => e.id === id ? { ...e, published: updated.published } : e));
+    } catch (err) {
+      console.error('Failed to toggle publish:', err);
+    }
+  };
+
+  const duplicateEvent = async (id: string) => {
+    try {
+      const headers = await authHeader();
+      const res = await fetch(`/api/events/${id}/duplicate`, { method: 'POST', headers });
+      if (!res.ok) throw new Error('Failed');
+      const newEvent = await res.json();
+      setEvents(prev => [newEvent, ...prev]);
+      // Generate QR for the new event
+      const url = `${window.location.origin}/e/${newEvent.id}`;
+      const qr = await QRCode.toDataURL(url, { width: 200, margin: 1 });
+      setQrCodes(prev => ({ ...prev, [newEvent.id]: qr }));
+    } catch (err) {
+      console.error('Failed to duplicate event:', err);
     }
   };
 
@@ -258,10 +290,15 @@ export default function AdminDashboard() {
                         <ImageIcon className="w-10 h-10 text-[#5A5A40]/20" />
                       </div>
                     )}
-                    <div className="absolute top-2 left-2">
+                    <div className="absolute top-2 left-2 flex gap-1">
                       <span className="text-[10px] uppercase font-bold px-2 py-1 bg-white/90 backdrop-blur-sm text-[#5A5A40] rounded-full">
                         {ev.event_type}
                       </span>
+                      {ev.published === false && (
+                        <span className="text-[10px] uppercase font-bold px-2 py-1 bg-amber-100/95 text-amber-600 rounded-full">
+                          Draft
+                        </span>
+                      )}
                     </div>
                     <button
                       onClick={() => deleteEvent(ev.id, ev.deceased_name)}
@@ -274,9 +311,17 @@ export default function AdminDashboard() {
                   {/* Content */}
                   <div className="p-4">
                     <h3 className="font-bold text-gray-900 truncate">{ev.deceased_name}</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Created {new Date(ev.created_at).toLocaleDateString()}
-                    </p>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <p className="text-xs text-gray-400">
+                        Created {new Date(ev.created_at).toLocaleDateString()}
+                      </p>
+                      {(ev.view_count ?? 0) > 0 && (
+                        <span className="flex items-center gap-1 text-[10px] text-gray-400">
+                          <Eye className="w-3 h-3" />
+                          {ev.view_count.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
 
                     {/* Actions */}
                     <div className="flex gap-1.5 mt-3">
@@ -304,6 +349,22 @@ export default function AdminDashboard() {
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </Link>
+
+                      <button
+                        onClick={() => togglePublish(ev.id, ev.published !== false)}
+                        className={`p-2 rounded-lg transition-colors ${ev.published === false ? 'bg-amber-50 text-amber-500 hover:bg-amber-100' : 'bg-[#f5f5f0] text-[#5A5A40] hover:bg-[#ebebE4]'}`}
+                        title={ev.published === false ? 'Publish event' : 'Unpublish (set to draft)'}
+                      >
+                        {ev.published === false ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+
+                      <button
+                        onClick={() => duplicateEvent(ev.id)}
+                        className="p-2 bg-[#f5f5f0] text-gray-400 rounded-lg hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                        title="Duplicate event"
+                      >
+                        <CopyPlus className="w-3.5 h-3.5" />
+                      </button>
 
                       <Link
                         to={`/admin/${ev.id}`}

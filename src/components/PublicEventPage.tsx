@@ -94,10 +94,16 @@ export default function PublicEventPage() {
         return res.json();
       })
       .then(data => {
-        if (data) setEvent(data);
+        if (data) {
+          setEvent(data);
+          document.title = `${data.deceased_name} — Evergreen Pro TV`;
+          // Fire-and-forget view count increment
+          fetch(`/api/events/${id}/view`, { method: 'POST' }).catch(() => {});
+        }
         setLoading(false);
       })
       .catch(() => { setNotFound(true); setLoading(false); });
+    return () => { document.title = 'Evergreen Pro TV'; };
   }, [id]);
 
   const handleShare = async () => {

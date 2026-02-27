@@ -37,6 +37,8 @@ export interface EventRecord {
   deceased_photo: string | null;
   event_type: string;
   obituary: string | null;
+  published: boolean;
+  view_count: number;
   created_at: string;
 }
 

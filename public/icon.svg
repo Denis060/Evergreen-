@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#5A5A40"/>
+  <g transform="translate(128, 152)" fill="none" stroke="white" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Camera body -->
+    <rect x="0" y="48" width="256" height="160" rx="20" fill="none" stroke="white" stroke-width="20"/>
+    <!-- Lens -->
+    <circle cx="128" cy="128" r="52" stroke="white" stroke-width="20"/>
+    <circle cx="128" cy="128" r="24" fill="white" stroke="none"/>
+    <!-- Viewfinder bump -->
+    <path d="M88 48 L96 20 L160 20 L168 48" stroke="white" stroke-width="20" fill="none"/>
+    <!-- Flash -->
+    <circle cx="214" cy="80" r="10" fill="white" stroke="none"/>
+  </g>
+</svg>

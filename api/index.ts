@@ -1,6 +1,8 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { createClient } from "@supabase/supabase-js";
+import fs from "fs";
+import path from "path";
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
@@ -51,6 +53,7 @@ app.get("/api/events/:id", async (req, res) => {
       .single();
 
     if (error || !event) return res.status(404).json({ error: "Event not found" });
+    if (event.published === false) return res.status(404).json({ error: "Event not found" });
 
     const [{ data: subPrograms }, { data: downloadables }] = await Promise.all([
       supabase.from("sub_programs").select("*").eq("event_id", req.params.id).order("order_index"),
@@ -125,6 +128,99 @@ app.put("/api/events/:id", requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to update event" });
+  }
+});
+
+app.post("/api/events/:id/duplicate", requireAuth, async (req, res) => {
+  try {
+    const sc = getServiceClient();
+    const { data: source, error: fetchErr } = await sc
+      .from("events")
+      .select("*")
+      .eq("id", req.params.id)
+      .single();
+    if (fetchErr || !source) return res.status(404).json({ error: "Event not found" });
+
+    const newId = Math.random().toString(36).substring(2, 10);
+    const { data: newEvent, error: insertErr } = await sc
+      .from("events")
+      .insert([{
+        id: newId,
+        deceased_name: `${source.deceased_name} (Copy)`,
+        event_type: source.event_type,
+        deceased_photo: source.deceased_photo,
+        obituary: source.obituary,
+        published: source.published ?? true,
+      }])
+      .select()
+      .single();
+    if (insertErr) throw insertErr;
+
+    // Clone sub-programs
+    const { data: subPrograms } = await sc
+      .from("sub_programs")
+      .select("*")
+      .eq("event_id", req.params.id);
+    if (subPrograms?.length) {
+      await sc.from("sub_programs").insert(
+        subPrograms.map(({ id: _id, event_id: _ev, ...rest }: any) => ({ ...rest, event_id: newId }))
+      );
+    }
+
+    // Clone downloadables
+    const { data: downloads } = await sc
+      .from("downloadables")
+      .select("*")
+      .eq("event_id", req.params.id);
+    if (downloads?.length) {
+      await sc.from("downloadables").insert(
+        downloads.map(({ id: _id, event_id: _ev, ...rest }: any) => ({ ...rest, event_id: newId }))
+      );
+    }
+
+    res.status(201).json(newEvent);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to duplicate event" });
+  }
+});
+
+app.patch("/api/events/:id/publish", requireAuth, async (req, res) => {
+  const { published } = req.body;
+  if (typeof published !== "boolean") return res.status(400).json({ error: "published must be boolean" });
+  try {
+    const { data, error } = await getServiceClient()
+      .from("events")
+      .update({ published })
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update publish status" });
+  }
+});
+
+app.post("/api/events/:id/view", async (req, res) => {
+  try {
+    const sc = getServiceClient();
+    const { data } = await sc
+      .from("events")
+      .select("view_count")
+      .eq("id", req.params.id)
+      .single();
+    if (data) {
+      await sc
+        .from("events")
+        .update({ view_count: (data.view_count || 0) + 1 })
+        .eq("id", req.params.id);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to record view" });
   }
 });
 
@@ -255,6 +351,70 @@ app.delete("/api/portfolio-images/:id", requireAuth, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Failed to delete portfolio image" });
   }
+});
+
+// ─── Public Event Page (OG tags for social crawlers) ───────────────────────
+
+const BOT_UA = /facebookexternalhit|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|Slackbot|Pinterest|Discordbot|vkShare|W3C_Validator/i;
+
+function escapeHtml(str: string) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+app.get("/e/:id", async (req: Request, res: Response) => {
+  const ua = req.headers["user-agent"] || "";
+
+  if (!BOT_UA.test(ua)) {
+    // Regular user — serve the SPA
+    try {
+      const indexPath = path.join(process.cwd(), "dist", "index.html");
+      const html = fs.readFileSync(indexPath, "utf8");
+      return res.setHeader("Content-Type", "text/html").send(html);
+    } catch {
+      return res.status(404).send("Not found");
+    }
+  }
+
+  // Social media bot — return OG HTML
+  const { data: event } = await supabase
+    .from("events")
+    .select("deceased_name, event_type, deceased_photo, obituary")
+    .eq("id", req.params.id)
+    .single();
+
+  if (!event) return res.status(404).send("Event not found");
+
+  const title = escapeHtml(`${event.deceased_name} — Evergreen Pro TV`);
+  const desc = escapeHtml(
+    event.obituary
+      ? String(event.obituary).slice(0, 200)
+      : `${event.event_type} event covered by Evergreen Pro TV`
+  );
+  const image = escapeHtml(event.deceased_photo || "");
+  const url = escapeHtml(`${req.protocol}://${req.get("host")}/e/${req.params.id}`);
+
+  res.setHeader("Content-Type", "text/html").send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <meta name="description" content="${desc}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${url}">
+  <meta property="og:title" content="${title}">
+  <meta property="og:description" content="${desc}">
+  <meta property="og:site_name" content="Evergreen Pro TV">
+  ${image ? `<meta property="og:image" content="${image}">` : ""}
+  <meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">
+  <meta name="twitter:title" content="${title}">
+  <meta name="twitter:description" content="${desc}">
+  ${image ? `<meta name="twitter:image" content="${image}">` : ""}
+  <script>window.location.replace("${url}");</script>
+</head>
+<body>
+  <p><a href="${url}">${title}</a></p>
+</body>
+</html>`);
 });
 
 export default app;
