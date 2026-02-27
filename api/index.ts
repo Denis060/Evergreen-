@@ -94,13 +94,13 @@ app.get("/api/events", requireAuth, async (req, res) => {
 });
 
 app.post("/api/events", requireAuth, async (req, res) => {
-  const { deceased_name, event_type, deceased_photo } = req.body;
+  const { deceased_name, event_type, deceased_photo, obituary } = req.body;
   if (!deceased_name) return res.status(400).json({ error: "deceased_name is required" });
   const id = Math.random().toString(36).substring(2, 10);
   try {
     const { data, error } = await getServiceClient()
       .from("events")
-      .insert([{ id, deceased_name, event_type: event_type || "memorial", deceased_photo: deceased_photo || null }])
+      .insert([{ id, deceased_name, event_type: event_type || "memorial", deceased_photo: deceased_photo || null, obituary: obituary || null }])
       .select()
       .single();
     if (error) throw error;
@@ -112,11 +112,11 @@ app.post("/api/events", requireAuth, async (req, res) => {
 });
 
 app.put("/api/events/:id", requireAuth, async (req, res) => {
-  const { deceased_name, event_type, deceased_photo } = req.body;
+  const { deceased_name, event_type, deceased_photo, obituary } = req.body;
   try {
     const { data, error } = await getServiceClient()
       .from("events")
-      .update({ deceased_name, event_type, deceased_photo })
+      .update({ deceased_name, event_type, deceased_photo, obituary })
       .eq("id", req.params.id)
       .select()
       .single();

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   MapPin, Calendar, Clock, Video, Download, Share2,
-  Check, Image as ImageIcon, FileText, Camera
+  Check, Image as ImageIcon, FileText, Camera, MessageCircle, CalendarPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { EventDetail, SubProgram } from '../App';
@@ -46,6 +46,36 @@ function useCountdown(subPrograms: SubProgram[]) {
   return { timeLeft, nextService };
 }
 
+// ─── iCal generator ───────────────────────────────────────────────────────────
+
+function buildICS(sp: SubProgram, eventName: string): string {
+  const start = new Date(`${sp.date}T${sp.time}`);
+  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Evergreen Pro TV//EN',
+    'BEGIN:VEVENT',
+    `DTSTART:${fmt(start)}`,
+    `DTEND:${fmt(end)}`,
+    `SUMMARY:${sp.name} — ${eventName}`,
+    sp.location ? `LOCATION:${sp.location}` : '',
+    sp.stream_url ? `URL:${sp.stream_url}` : '',
+    `DESCRIPTION:${window.location.href}`,
+    'END:VEVENT', 'END:VCALENDAR',
+  ].filter(Boolean);
+  return lines.join('\r\n');
+}
+
+function downloadICS(sp: SubProgram, eventName: string) {
+  const blob = new Blob([buildICS(sp, eventName)], { type: 'text/calendar' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${sp.name.replace(/\s+/g, '-')}.ics`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PublicEventPage() {
@@ -71,17 +101,19 @@ export default function PublicEventPage() {
   }, [id]);
 
   const handleShare = async () => {
-    const shareData = {
-      title: `In Loving Memory of ${event?.deceased_name}`,
-      url: window.location.href,
-    };
+    const shareData = { title: event?.deceased_name, url: window.location.href };
     if (navigator.share) {
-      try { await navigator.share(shareData); } catch { /* user cancelled */ }
+      try { await navigator.share(shareData); } catch { /* cancelled */ }
     } else {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleWhatsApp = () => {
+    const text = encodeURIComponent(`${event?.deceased_name}\n${window.location.href}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -101,6 +133,9 @@ export default function PublicEventPage() {
       return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
     } catch { return timeStr; }
   };
+
+  const mapsUrl = (location: string) =>
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
 
   const CountDown = ({ label, value }: { label: string; value: number }) => (
     <div className="flex flex-col items-center">
@@ -155,14 +190,22 @@ export default function PublicEventPage() {
       {/* ── Header ── */}
       <header className="max-w-3xl mx-auto pt-12 pb-8 px-6 text-center">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          {/* Share button */}
-          <div className="flex justify-center mb-8">
+
+          {/* Share buttons */}
+          <div className="flex justify-center gap-2 mb-8">
             <button
               onClick={handleShare}
               className="flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-sm border border-gray-100 text-[#5A5A40] text-xs font-sans hover:shadow-md transition-all"
             >
               {copied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-              {copied ? 'Link Copied' : 'Share this page'}
+              {copied ? 'Link Copied' : 'Share'}
+            </button>
+            <button
+              onClick={handleWhatsApp}
+              className="flex items-center gap-2 px-4 py-2 bg-[#25D366] rounded-full shadow-sm text-white text-xs font-sans hover:bg-[#20ba5a] hover:shadow-md transition-all"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              WhatsApp
             </button>
           </div>
 
@@ -186,6 +229,19 @@ export default function PublicEventPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-6 pb-24 space-y-10">
+
+        {/* ── Obituary ── */}
+        {(event as any).obituary && (
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 text-center"
+          >
+            <p className="text-gray-600 leading-relaxed text-base font-serif italic whitespace-pre-line">
+              {(event as any).obituary}
+            </p>
+          </motion.section>
+        )}
 
         {/* ── Countdown ── */}
         <AnimatePresence>
@@ -229,23 +285,41 @@ export default function PublicEventPage() {
                       <div className="mt-2 space-y-1.5 font-sans text-sm text-gray-500">
                         {sp.date && (
                           <div className="flex items-center gap-2">
-                            <Calendar className="w-3.5 h-3.5 text-[#5A5A40]/50 flex-shrink-0" />
+                            <Calendar className="w-3.5 h-3.5 text-[#5A5A40]/50 shrink-0" />
                             <span>{formatDate(sp.date)}</span>
                           </div>
                         )}
                         {sp.time && (
                           <div className="flex items-center gap-2">
-                            <Clock className="w-3.5 h-3.5 text-[#5A5A40]/50 flex-shrink-0" />
+                            <Clock className="w-3.5 h-3.5 text-[#5A5A40]/50 shrink-0" />
                             <span>{formatTime(sp.time)}</span>
                           </div>
                         )}
                         {sp.location && (
                           <div className="flex items-center gap-2">
-                            <MapPin className="w-3.5 h-3.5 text-[#5A5A40]/50 flex-shrink-0" />
-                            <span>{sp.location}</span>
+                            <MapPin className="w-3.5 h-3.5 text-[#5A5A40]/50 shrink-0" />
+                            <a
+                              href={mapsUrl(sp.location)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-[#5A5A40] hover:underline transition-colors"
+                            >
+                              {sp.location}
+                            </a>
                           </div>
                         )}
                       </div>
+
+                      {/* iCal button — only if date + time are set */}
+                      {sp.date && sp.time && (
+                        <button
+                          onClick={() => downloadICS(sp, event.deceased_name)}
+                          className="mt-3 inline-flex items-center gap-1.5 text-xs font-sans text-[#5A5A40]/70 hover:text-[#5A5A40] border border-[#5A5A40]/20 hover:border-[#5A5A40]/40 px-3 py-1.5 rounded-full transition-all"
+                        >
+                          <CalendarPlus className="w-3 h-3" />
+                          Add to Calendar
+                        </button>
+                      )}
                     </div>
 
                     {sp.stream_url && (
@@ -253,7 +327,7 @@ export default function PublicEventPage() {
                         href={sp.stream_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-[#5A5A40] text-white rounded-full text-xs font-sans font-medium hover:bg-[#4a4a34] transition-colors shadow-md shadow-[#5A5A40]/20"
+                        className="shrink-0 flex items-center gap-2 px-4 py-2 bg-[#5A5A40] text-white rounded-full text-xs font-sans font-medium hover:bg-[#4a4a34] transition-colors shadow-md shadow-[#5A5A40]/20"
                       >
                         <Video className="w-3.5 h-3.5" />
                         Watch Live
@@ -282,7 +356,7 @@ export default function PublicEventPage() {
                     download={!isPdf ? dl.title : undefined}
                     className="flex items-center gap-4 bg-white rounded-2xl p-4 shadow-sm border border-transparent hover:border-[#5A5A40]/20 hover:shadow-md transition-all group"
                   >
-                    <div className="w-10 h-10 bg-[#5A5A40]/10 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-[#5A5A40]/20 transition-colors">
+                    <div className="w-10 h-10 bg-[#5A5A40]/10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-[#5A5A40]/20 transition-colors">
                       {isPdf ? (
                         <FileText className="w-5 h-5 text-[#5A5A40]" />
                       ) : (
@@ -293,7 +367,7 @@ export default function PublicEventPage() {
                       <p className="font-sans font-medium text-sm text-gray-900 truncate">{dl.title}</p>
                       <p className="text-xs text-gray-400 capitalize mt-0.5">{dl.file_type}</p>
                     </div>
-                    <Download className="w-4 h-4 text-[#5A5A40]/40 group-hover:text-[#5A5A40] transition-colors flex-shrink-0" />
+                    <Download className="w-4 h-4 text-[#5A5A40]/40 group-hover:text-[#5A5A40] transition-colors shrink-0" />
                   </a>
                 );
               })}

@@ -36,6 +36,7 @@ export interface EventRecord {
   deceased_name: string;
   deceased_photo: string | null;
   event_type: string;
+  obituary: string | null;
   created_at: string;
 }
 

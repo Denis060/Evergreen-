@@ -64,6 +64,7 @@ export default function EventForm() {
 
   const [deceasedName, setDeceasedName] = useState('');
   const [eventType, setEventType] = useState('memorial');
+  const [obituary, setObituary] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
@@ -88,6 +89,7 @@ export default function EventForm() {
 
         setDeceasedName(data.deceased_name);
         setEventType(data.event_type);
+        setObituary(data.obituary || '');
         setExistingPhotoUrl(data.deceased_photo || null);
         setPhotoPreview(data.deceased_photo || null);
 
@@ -209,14 +211,14 @@ export default function EventForm() {
         await fetch(`/api/events/${id}`, {
           method: 'PUT',
           headers,
-          body: JSON.stringify({ deceased_name: deceasedName, event_type: eventType, deceased_photo: photoUrl }),
+          body: JSON.stringify({ deceased_name: deceasedName, event_type: eventType, deceased_photo: photoUrl, obituary: obituary || null }),
         });
       } else {
         // Create event
         const res = await fetch('/api/events', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ deceased_name: deceasedName, event_type: eventType, deceased_photo: photoUrl }),
+          body: JSON.stringify({ deceased_name: deceasedName, event_type: eventType, deceased_photo: photoUrl, obituary: obituary || null }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to create event');
@@ -370,6 +372,19 @@ export default function EventForm() {
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* ── Obituary / Tribute ── */}
+          <section className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Obituary / Tribute</h2>
+            <p className="text-xs text-gray-400 mb-4">Optional — a brief bio or tribute message shown on the family page.</p>
+            <textarea
+              value={obituary}
+              onChange={e => setObituary(e.target.value)}
+              rows={5}
+              placeholder="Write a tribute, biography, or short message about the person or event…"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#5A5A40] focus:border-transparent outline-none text-sm resize-none leading-relaxed"
+            />
           </section>
 
           {/* ── Services / Sub-Programs ── */}
