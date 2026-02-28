@@ -73,6 +73,8 @@ export default function EventForm() {
     { clientId: crypto.randomUUID(), name: '', date: '', time: '', location: '', stream_url: '', order_index: 0 }
   ]);
   const [downloads, setDownloads] = useState<DownloadableDraft[]>([]);
+  const [deletedSpIds, setDeletedSpIds] = useState<string[]>([]);
+  const [deletedDlIds, setDeletedDlIds] = useState<string[]>([]);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -155,7 +157,11 @@ export default function EventForm() {
   };
 
   const removeSubProgram = (clientId: string) => {
-    setSubPrograms(prev => prev.filter(sp => sp.clientId !== clientId));
+    setSubPrograms(prev => {
+      const sp = prev.find(s => s.clientId === clientId);
+      if (sp?.dbId) setDeletedSpIds(ids => [...ids, sp.dbId!]);
+      return prev.filter(s => s.clientId !== clientId);
+    });
   };
 
   // Download helpers
@@ -180,7 +186,11 @@ export default function EventForm() {
   };
 
   const removeDownload = (clientId: string) => {
-    setDownloads(prev => prev.filter(d => d.clientId !== clientId));
+    setDownloads(prev => {
+      const dl = prev.find(d => d.clientId === clientId);
+      if (dl?.dbId) setDeletedDlIds(ids => [...ids, dl.dbId!]);
+      return prev.filter(d => d.clientId !== clientId);
+    });
   };
 
   // ─── Save ─────────────────────────────────────────────────────────────────
@@ -247,12 +257,9 @@ export default function EventForm() {
         }
       }
 
-      // Delete removed sub-programs (edit mode: compare original dbIds with current)
-      if (isEdit) {
-        // Sub-programs without matching dbId were already filtered out via removeSubProgram
-        // (we don't track deletions separately — the server will not remove ones not submitted here)
-        // To fully handle deletions, we'd need to compare. For now, removed sub-programs are
-        // handled by re-fetching in edit mode and users removing them explicitly.
+      // Delete removed sub-programs
+      for (const spId of deletedSpIds) {
+        await fetch(`/api/events/${eventId}/sub-programs/${spId}`, { method: 'DELETE', headers });
       }
 
       // Upload + save downloadables
@@ -265,6 +272,11 @@ export default function EventForm() {
           headers,
           body: JSON.stringify({ title: dl.title, file_url: fileUrl, file_type: dl.file_type }),
         });
+      }
+
+      // Delete removed downloadables
+      for (const dlId of deletedDlIds) {
+        await fetch(`/api/events/${eventId}/downloads/${dlId}`, { method: 'DELETE', headers });
       }
 
       navigate('/admin');
