@@ -9,41 +9,84 @@ import type { EventDetail, SubProgram } from '../App';
 
 // ─── Countdown Hook ───────────────────────────────────────────────────────────
 
-function useCountdown(subPrograms: SubProgram[]) {
-  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
-  const [nextService, setNextService] = useState<SubProgram | null>(null);
+const LIVE_DURATION_MS = 2 * 60 * 60 * 1000; // assume 2 hrs live window
+
+type CountdownState = {
+  status: 'upcoming' | 'live' | null;
+  service: SubProgram | null;
+  timeLeft: { days: number; hours: number; minutes: number; seconds: number } | null;
+  elapsed: { hours: number; minutes: number; seconds: number } | null;
+};
+
+function useCountdown(subPrograms: SubProgram[]): CountdownState {
+  const [state, setState] = useState<CountdownState>({
+    status: null, service: null, timeLeft: null, elapsed: null,
+  });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!subPrograms.length) return;
 
-    const upcoming = subPrograms
+    const services = subPrograms
       .filter(sp => sp.date && sp.time)
-      .map(sp => ({ sp, dt: new Date(`${sp.date}T${sp.time}`) }))
-      .filter(({ dt }) => !isNaN(dt.getTime()) && dt > new Date())
-      .sort((a, b) => a.dt.getTime() - b.dt.getTime());
+      .map(sp => ({ sp, start: new Date(`${sp.date}T${sp.time}`) }))
+      .filter(({ start }) => !isNaN(start.getTime()))
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
 
-    if (!upcoming.length) { setNextService(null); setTimeLeft(null); return; }
-
-    const { sp, dt } = upcoming[0];
-    setNextService(sp);
+    if (!services.length) return;
 
     const tick = () => {
-      const diff = dt.getTime() - Date.now();
-      if (diff <= 0) { setTimeLeft(null); clearInterval(timerRef.current!); return; }
-      setTimeLeft({
-        days: Math.floor(diff / 86400000),
-        hours: Math.floor((diff % 86400000) / 3600000),
-        minutes: Math.floor((diff % 3600000) / 60000),
-        seconds: Math.floor((diff % 60000) / 1000),
+      const now = Date.now();
+
+      // Is any service live right now?
+      const live = services.find(({ start }) => {
+        const ms = now - start.getTime();
+        return ms >= 0 && ms < LIVE_DURATION_MS;
+      });
+
+      if (live) {
+        const ms = now - live.start.getTime();
+        setState({
+          status: 'live',
+          service: live.sp,
+          timeLeft: null,
+          elapsed: {
+            hours: Math.floor(ms / 3600000),
+            minutes: Math.floor((ms % 3600000) / 60000),
+            seconds: Math.floor((ms % 60000) / 1000),
+          },
+        });
+        return;
+      }
+
+      // Next upcoming
+      const next = services.find(({ start }) => start.getTime() > now);
+      if (!next) {
+        setState({ status: null, service: null, timeLeft: null, elapsed: null });
+        clearInterval(timerRef.current!);
+        return;
+      }
+
+      const diff = next.start.getTime() - now;
+      setState({
+        status: 'upcoming',
+        service: next.sp,
+        elapsed: null,
+        timeLeft: {
+          days: Math.floor(diff / 86400000),
+          hours: Math.floor((diff % 86400000) / 3600000),
+          minutes: Math.floor((diff % 3600000) / 60000),
+          seconds: Math.floor((diff % 60000) / 1000),
+        },
       });
     };
+
     tick();
     timerRef.current = setInterval(tick, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [subPrograms]);
 
-  return { timeLeft, nextService };
+  return state;
 }
 
 // ─── iCal generator ───────────────────────────────────────────────────────────
@@ -84,7 +127,7 @@ export default function PublicEventPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
-  const { timeLeft, nextService } = useCountdown(event?.sub_programs || []);
+  const { status: countdownStatus, service: countdownService, timeLeft, elapsed } = useCountdown(event?.sub_programs || []);
 
   useEffect(() => {
     if (!id) return;
@@ -249,16 +292,59 @@ export default function PublicEventPage() {
           </motion.section>
         )}
 
-        {/* ── Countdown ── */}
-        <AnimatePresence>
-          {timeLeft && nextService && (
+        {/* ── Countdown / Live ── */}
+        <AnimatePresence mode="wait">
+          {countdownStatus === 'live' && countdownService && elapsed && (
             <motion.div
+              key="live"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-[#1a1a1a] rounded-3xl p-6 shadow-lg text-center overflow-hidden relative"
+            >
+              {/* Pulsing background glow */}
+              <div className="absolute inset-0 bg-red-600/5 animate-pulse rounded-3xl" />
+
+              <div className="relative z-10">
+                {/* LIVE badge */}
+                <div className="flex items-center justify-center gap-2 mb-3">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-red-400 font-sans">Live Now</span>
+                </div>
+
+                <p className="font-serif text-xl text-white mb-1">{countdownService.name}</p>
+                <p className="text-sm text-white/40 font-sans mb-4">
+                  {String(elapsed.hours).padStart(2, '0')}:{String(elapsed.minutes).padStart(2, '0')}:{String(elapsed.seconds).padStart(2, '0')} elapsed
+                </p>
+
+                {countdownService.stream_url && (
+                  <a
+                    href={countdownService.stream_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-6 py-2.5 rounded-full text-sm font-sans font-semibold transition-colors shadow-lg shadow-red-500/30"
+                  >
+                    <Video className="w-4 h-4" />
+                    Join Stream
+                  </a>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {countdownStatus === 'upcoming' && countdownService && timeLeft && (
+            <motion.div
+              key="upcoming"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
               className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 text-center"
             >
               <p className="text-xs uppercase tracking-widest text-[#5A5A40]/60 font-sans mb-1">Next Service</p>
-              <p className="font-serif text-lg text-[#1a1a1a] mb-5">{nextService.name}</p>
+              <p className="font-serif text-lg text-[#1a1a1a] mb-5">{countdownService.name}</p>
               <div className="flex items-center justify-center gap-4">
                 <CountDown label="Days" value={timeLeft.days} />
                 <span className="text-2xl text-[#5A5A40]/30 font-light mb-3">:</span>
